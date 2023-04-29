@@ -1,203 +1,138 @@
-import java.io.File;
-import java.io.IOException;
-import java.util.Scanner;
-
-import org.json.simple.JSONArray;
-import org.json.simple.JSONObject;
-import org.json.simple.parser.JSONParser;
-import org.json.simple.parser.ParseException;
-
-import org.w3c.dom.Document;
-import org.w3c.dom.Element;
-import org.w3c.dom.Node;
-import org.w3c.dom.NodeList;
+import org.w3c.dom.*;
 import org.xml.sax.SAXException;
 
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.parsers.ParserConfigurationException;
-
-import java.io.*;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Objects;
+import java.io.File;
+import java.io.IOException;
+import java.util.Scanner;
 
 public class Main {
-    static Basket basket;
-    static String fileToLoadName;
-    static String fileToSaveName;
-    static String fileToLogName;
 
-    public static void main(String[] args) throws IOException, ParserConfigurationException, SAXException {
-
-        String[] products = {"Хлеб", "Арбуз", "Молоко"};
-        int[] prices = {100, 200, 300};
+    public static void main(String[] args) throws IOException, SAXException, ParserConfigurationException {
 
         DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
         DocumentBuilder builder = factory.newDocumentBuilder();
-        Document document = builder.parse(new File("shop.xml"));
-        NodeList nodeList = document.getChildNodes().item(0).getChildNodes();
-        String methodToLoad = null;
-        String methodToSave = null;
-        for (int i = 0; i < nodeList.getLength(); i++) {
-            Node node = nodeList.item(i);
-            if (Node.ELEMENT_NODE == node.getNodeType()) {
-                Element element = (Element) node;
-                if (element.getTagName().equals("load")) {
-                    if (element.getElementsByTagName("enabled").item(0).getTextContent().equals("true")) {
-                        fileToLoadName = element.getElementsByTagName("fileName").item(0).getTextContent();
-                        if (element.getElementsByTagName("format").item(0).getTextContent().equals("json")) {
-                            methodToLoad = "json";
-                        }
-                        if (element.getElementsByTagName("format").item(0).getTextContent().equals("txt")) {
-                            methodToLoad = "txt";
-                        }
-                    }
-                }
-                if (element.getTagName().equals("save")) {
-                    if (element.getElementsByTagName("enabled").item(0).getTextContent().equals("true")) {
-                        fileToSaveName = element.getElementsByTagName("fileName").item(0).getTextContent();
-                        if (element.getElementsByTagName("format").item(0).getTextContent().equals("json")) {
-                            methodToSave = "json";
-                        }
-                        if (element.getElementsByTagName("format").item(0).getTextContent().equals("txt")) {
-                            methodToSave = "txt";
-                        }
-                    }
-                }
-                if (element.getTagName().equals("log")) {
-                    if (element.getElementsByTagName("enabled").item(0).getTextContent().equals("true")) {
-                        fileToLogName = element.getElementsByTagName("fileName").item(0).getTextContent();
-                    }
-                }
-            }
+        Document doc = builder.parse(new File("shop.xml"));
+
+        ReadBlock load = new ReadBlock(doc.getElementsByTagName("load").item(0));
+        ReadBlock save = new ReadBlock(doc.getElementsByTagName("save").item(0));
+        ReadBlock log = new ReadBlock(doc.getElementsByTagName("log").item(0));
+
+        Basket basket = null;
+        File textFile = new File("basket.txt");
+        File jsonFile = new File("basket.json");
+
+        try {
+            basket = Basket.loadFromTxtFile(textFile);
+        } catch (Exception e) {
+            System.out.println(e.getMessage());
         }
 
-        if (Objects.equals(methodToLoad, "json")) {
-            loadFromJson(products, prices);
+        try {
+            basket = Basket.loadFromJson(jsonFile);
+        } catch (Exception e) {
+            System.out.println(e.getMessage());
         }
-        if (Objects.equals(methodToLoad, "txt")) {
-            loadFromTxt(products, prices);
-        } else {
+        if (basket == null) {
+            String[] products = {"Хлеб", "Арбуз", "Молоко"};
+            int[] prices = {100, 200, 300};
             basket = new Basket(products, prices);
+        }
+        ClientLog clientLog = new ClientLog();
+
+        if (load.enabled) {
+            if (load.format.equals("txt")) {
+                try {
+                    basket = Basket.loadFromTxtFile(new File(load.fileName));
+                } catch (IOException e) {
+                    System.out.println(e.getMessage());
+                }
+            }
+            if (load.format.equals("json")) {
+                try {
+                    basket = Basket.loadFromJson(new File(load.fileName));
+                } catch (IOException e) {
+                    System.out.println(e.getMessage());
+                }
+            }
         }
 
         System.out.println("Программа для сфорирования продуктовой корзины");
         System.out.println("Список возможных товаров для покупки");
-        for (int ii = 0; ii < products.length; ii++) {
-            System.out.println(ii + 1 + "." + " " + products[ii] + " " + prices[ii] + " руб/шт");
-        }
-
         Scanner scanner = new Scanner(System.in);
-        ClientLog clientLog = new ClientLog();
-
+        for (int i = 0; i < basket.getProducts().length; i++) {
+            System.out.println((i + 1) + " " + basket.getProducts()[i] + " " + basket.getPrices()[i] + " руб/шт");
+        }
         while (true) {
-            System.out.println("Выберите товар и количество или введите `end`");
-            String input = scanner.nextLine();
-            if ("end".equals(input)) {
+            System.out.println("Выберите товар и количество или введите 'end' ");
+            String inputString = scanner.nextLine();
+            int productNumber = 0;
+            int productCount = 0;
+            if ("end".equals(inputString)) {
+                System.out.println("Ваша корзина:");
                 break;
             }
-            String[] parts = input.split(" ");
-            int productNumber = Integer.parseInt(parts[0]) - 1;
-            int productCount = Integer.parseInt(parts[1]);
+            String[] myPrice = inputString.split(" ");
+            productNumber = Integer.parseInt(myPrice[0]) - 1;
+            productCount = Integer.parseInt(myPrice[1]);
 
-            File jsonFile = new File("basket.json");
             clientLog.log(productNumber + 1, productCount);
-
             basket.addToCart(productNumber, productCount);
-            if (Objects.equals(methodToSave, "json")) {
-                saveToJson();
+
+        }
+        basket.saveTxt(textFile);
+        basket.saveJson(jsonFile);
+        clientLog.exportAsCSV(new File("log.csv"));
+
+        if (save.enabled) {
+            if (save.format.equals("txt")) {
+                try {
+                    basket.saveTxt(new File(save.fileName));
+                } catch (IOException e) {
+                    System.out.println(e.getMessage());
+                }
+            } else if (save.format.equals("json")) {
+                try {
+                    basket.saveJson(new File(save.fileName));
+                } catch (IOException e) {
+                    System.out.println(e.getMessage());
+                }
             }
-            if (Objects.equals(methodToSave, "txt")) {
-                basket.saveTxt(new File(fileToSaveName));
-            }
-            basket.printCart();
-            clientLog.exportAsCSV(new File(fileToLogName));
         }
-    }
-
-    public static void saveToJson() throws IOException {
-        JSONObject basketJson = new JSONObject();
-
-        JSONArray productsJson = new JSONArray();
-        productsJson.addAll(List.of(basket.getProducts()));
-        basketJson.put("products", productsJson);
-
-        JSONArray pricesJson = new JSONArray();
-        String[] stringPricesJson = Arrays.stream(basket.getPrices())
-                .mapToObj(String::valueOf)
-                .toArray(String[]::new);
-        pricesJson.addAll(List.of(stringPricesJson));
-        basketJson.put("prices", pricesJson);
-
-        JSONArray amountJson = new JSONArray();
-        String[] stringAmountJson = Arrays.stream(basket.getAmountOfProducts())
-                .mapToObj(String::valueOf)
-                .toArray(String[]::new);
-        amountJson.addAll(List.of(stringAmountJson));
-        basketJson.put("amount", amountJson);
-
-        try (FileWriter fileWriter = new FileWriter("basket.json")) {
-            fileWriter.write(basketJson.toJSONString());
-            fileWriter.flush();
-        }
-    }
-
-    public static void loadFromTxt(String[] products, int[] prices) throws IOException {
-        File textFile = new File(fileToLoadName);
-        if (textFile.exists()) {
-            basket = Basket.loadFromTxtFile(textFile);
-        } else {
-            basket = new Basket(products, prices);
-        }
-    }
-
-    public static void loadFromJson(String[] products, int[] prices) throws IOException {
-        File jsonFile = new File(fileToLoadName);
-
-        if (jsonFile.exists()) {
-            basket = new Basket(products, prices);
-            JSONParser parser = new JSONParser();
+        if (log.enabled) {
             try {
-                Object obj = parser.parse(new FileReader(fileToLoadName));
-                JSONObject basketParsedJson = (JSONObject) obj;
-
-                JSONArray productsJson = (JSONArray) basketParsedJson.get("products");
-                String[] productsFromJson = new String[productsJson.size()];
-                for (int i = 0; i < productsJson.size(); i++) {
-                    productsFromJson[i] = (String) productsJson.get(i);
-                }
-                basket.setProducts(productsFromJson);
-
-                JSONArray pricesJson = (JSONArray) basketParsedJson.get("prices");
-                String[] pricesFromJson = new String[pricesJson.size()];
-                for (int i = 0; i < pricesJson.size(); i++) {
-                    pricesFromJson[i] = (String) pricesJson.get(i);
-                }
-                int[] intPricesFromJson = new int[pricesFromJson.length];
-                for (int i = 0; i < pricesFromJson.length; i++) {
-                    intPricesFromJson[i] = Integer.parseInt(pricesFromJson[i]);
-                }
-                basket.setPrices(intPricesFromJson);
-
-                JSONArray amountJson = (JSONArray) basketParsedJson.get("amount");
-                String[] amountFromJson = new String[amountJson.size()];
-                for (int i = 0; i < amountJson.size(); i++) {
-                    amountFromJson[i] = (String) amountJson.get(i);
-                }
-                int[] intAmountFromJson = new int[amountFromJson.length];
-                for (int i = 0; i < amountFromJson.length; i++) {
-                    intAmountFromJson[i] = Integer.parseInt(amountFromJson[i]);
-                }
-                basket.setAmountOfProducts(intAmountFromJson);
-
-            } catch (ParseException e) {
-                throw new RuntimeException(e);
+                clientLog.exportAsCSV(new File(log.fileName));
+            } catch (IOException e) {
+                System.out.println(e.getMessage());
             }
+        }
+        basket.printCart();
 
-        } else {
-            basket = new Basket(products, prices);
+    }
+}
+
+class ReadBlock {
+    boolean enabled;
+    String fileName;
+    String format;
+
+    public ReadBlock(Node node) {
+        NodeList listNode = node.getChildNodes();
+
+        for (int i = 0; i < listNode.getLength(); i++) {
+            Node currentNode = listNode.item(i);
+            if (Node.ELEMENT_NODE == currentNode.getNodeType()) {
+                if (currentNode.getNodeName().equals("enabled")) {
+                    enabled = Boolean.parseBoolean(currentNode.getTextContent());
+                }
+                if (currentNode.getNodeName().equals("fileName")) {
+                    fileName = currentNode.getTextContent();
+                } else if (currentNode.getNodeName().equals("format")) {
+                    format = currentNode.getTextContent();
+                }
+            }
         }
     }
-
 }
